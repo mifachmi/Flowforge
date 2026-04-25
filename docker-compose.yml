@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: flowforge_local
+      POSTGRES_USER: fardhana24
+      POSTGRES_PASSWORD: 
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  horizon:
+    build: .
+    command: php artisan horizon
+    depends_on:
+      - postgres
+      - redis
+    env_file: .env
+
+volumes:
+  pg:
