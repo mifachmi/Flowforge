@@ -36,7 +36,7 @@ class WorkflowController extends Controller
             'trigger_type'         => 'required|in:manual,cron,webhook',
             'cron_expression'      => 'required_if:trigger_type,cron|nullable|string',
             'dag_definition'       => 'required|array',
-            'dag_definition.steps' => 'required|array|min:1',
+            'dag_definition.steps' => 'present|array',
             'dag_definition.edges' => 'nullable|array',
         ]);
 

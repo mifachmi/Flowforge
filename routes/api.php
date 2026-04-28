@@ -33,4 +33,8 @@ Route::middleware(['auth:api', 'tenant', 'throttle:60,1'])->group(function () {
 
     // Health panel
     Route::get('health', [WorkflowRunController::class, 'health']);
+
+    // SSE
+    Route::get('runs/{runId}/stream', [WorkflowRunController::class, 'stream'])
+        ->middleware(['auth:api', 'tenant']);
 });

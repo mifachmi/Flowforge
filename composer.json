@@ -9,6 +9,7 @@
         "php": "^8.3",
         "laravel/framework": "^13.0",
         "laravel/horizon": "^5.46",
+        "laravel/reverb": "^1.0",
         "laravel/tinker": "^3.0",
         "rebing/graphql-laravel": "^9.17",
         "spatie/laravel-permission": "^7.3",
