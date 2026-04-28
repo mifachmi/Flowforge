@@ -15,6 +15,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Http;  // ✅ Fix P1009
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 
 class ExecuteWorkflowJob implements ShouldQueue
 {
@@ -27,14 +28,46 @@ class ExecuteWorkflowJob implements ShouldQueue
 
     public function handle(): void
     {
+        Log::info('[Job] Started', ['run_id' => $this->run->id]);
+
         $this->run->update(['status' => 'running', 'started_at' => now()]);
 
-        $dagDefinition  = $this->run->workflow->activeVersion->dag_definition;
-        $parser         = (new DagParser)->parse($dagDefinition)->validate();
-        $parallelGroups = $parser->getParallelGroups();
-        $nodes          = $parser->getNodes();
-
         try {
+            $this->run->load('workflow.activeVersion');
+
+            // Guard 1: workflow tidak ditemukan
+            if (!$this->run->workflow) {
+                throw new \RuntimeException("Workflow not found for run {$this->run->id}");
+            }
+
+            // Guard 2: active version tidak ditemukan
+            if (!$this->run->workflow->activeVersion) {
+                throw new \RuntimeException("No active version for workflow {$this->run->workflow_id}");
+            }
+
+            $dagDefinition = $this->run->workflow->activeVersion->dag_definition;
+
+            Log::info('[Job] DAG type: ' . gettype($dagDefinition));
+
+            // Guard 3: decode jika masih string
+            if (is_string($dagDefinition)) {
+                $dagDefinition = json_decode($dagDefinition, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    throw new \RuntimeException("DAG definition is not valid JSON: " . json_last_error_msg());
+                }
+            }
+
+            // Guard 4: struktur DAG tidak valid
+            if (empty($dagDefinition['steps'])) {
+                throw new \RuntimeException("DAG definition has no steps. Value: " . json_encode($dagDefinition));
+            }
+
+            Log::info('[Job] DAG loaded', ['steps' => count($dagDefinition['steps'])]);
+
+            $parser         = (new DagParser)->parse($dagDefinition)->validate();
+            $parallelGroups = $parser->getParallelGroups();
+            $nodes          = $parser->getNodes();
+
             foreach ($parallelGroups as $group) {
                 foreach ($group as $stepId) {
                     $this->executeStep($stepId, $nodes[$stepId]);
@@ -42,13 +75,24 @@ class ExecuteWorkflowJob implements ShouldQueue
             }
 
             $this->run->update(['status' => 'success', 'finished_at' => now()]);
+            Log::info('[Job] Completed successfully', ['run_id' => $this->run->id]);
         } catch (\Throwable $e) {
+            Log::error('[Job] FAILED', [
+                'run_id'  => $this->run->id,
+                'error'   => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
+                'trace'   => collect(explode("\n", $e->getTraceAsString()))->take(10)->implode("\n"),
+            ]);
+
             $this->run->update(['status' => 'failed', 'finished_at' => now()]);
         }
     }
 
+
     private function executeStep(string $stepId, array $step): void
     {
+        $startedAt = now();
         $log = StepLog::create([
             'id'         => Str::uuid(),
             'run_id'     => $this->run->id,
@@ -67,24 +111,30 @@ class ExecuteWorkflowJob implements ShouldQueue
         while ($attempt <= $maxRetries) {
             try {
                 $output = $this->runStep($stepId, $step);
+                $finishedAt  = now();
+                $durationMs  = (int) max(0, $startedAt->diffInMilliseconds($finishedAt));
 
                 $log->update([
                     'status'      => 'success',
-                    'output'      => $output,
+                    'output'      => json_encode($output),
                     'attempt'     => $attempt,
-                    'finished_at' => now(),
-                    'duration_ms' => now()->diffInMilliseconds($log->started_at),
+                    'finished_at' => $finishedAt,
+                    'duration_ms' => $durationMs,   // ← selalu positif integer
                 ]);
 
                 broadcast(new StepStatusUpdated($this->run->id, $stepId, 'success'));
                 return;
             } catch (\Throwable $e) {
                 if ($attempt === $maxRetries) {
+                    $finishedAt = now();
+                    $durationMs = (int) max(0, $startedAt->diffInMilliseconds($finishedAt));
+
                     $log->update([
                         'status'      => 'failed',
                         'error'       => $e->getMessage(),
                         'attempt'     => $attempt,
-                        'finished_at' => now(),
+                        'finished_at' => $finishedAt,
+                        'duration_ms' => $durationMs,
                     ]);
                     broadcast(new StepStatusUpdated($this->run->id, $stepId, 'failed'));
                     throw $e;
@@ -114,9 +164,16 @@ class ExecuteWorkflowJob implements ShouldQueue
         $config = $step['config'];
         $method = strtolower($config['method'] ?? 'get');
 
+        // Bersihkan URL dari tanda kutip yang tidak sengaja masuk
+        $url = trim($config['url'] ?? '', " \"'");
+
+        if (empty($url) || !filter_var($url, FILTER_VALIDATE_URL)) {
+            throw new \RuntimeException("Invalid URL: {$config['url']}");
+        }
+
         $response = Http::timeout(30)                    // ✅ Fix P1009
             ->withHeaders($config['headers'] ?? [])
-            ->{$method}($config['url'], $config['body'] ?? []);
+            ->{$method}($url, $config['body'] ?? []);
 
         if (!$response->successful()) {
             throw new WorkflowStepException(            // ✅ Fix S112
