@@ -1,42 +1,42 @@
+/* eslint-disable no-unexpected-multiline */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState } from 'react'
-import { io, Socket } from 'socket.io-client'
 import { useAuthStore } from '../stores/authStore'
 
-interface StepStatus {
-  stepId: string
-  status: 'pending' | 'running' | 'success' | 'failed' | 'retrying'
-}
+type StepStatus = 'pending' | 'running' | 'success' | 'failed' | 'retrying'
 
 export function useWorkflowSocket(runId: string | null) {
-  const [stepStatuses, setStepStatuses] = useState<Record<string, StepStatus['status']>>({})
-  const [socket, setSocket] = useState<Socket | null>(null)
+  const [stepStatuses, setStepStatuses] = useState<Record<string, StepStatus>>({})
+  const [runStatus, setRunStatus] = useState<string>('pending')
   const token = useAuthStore.getState().token
 
   useEffect(() => {
-    if (!runId) return
+    if (!runId || !token) return
 
-    const s = io('http://localhost:6001', {
-      auth: { token },
-      transports: ['websocket'],
-    })
+    const eventSource = new EventSource(`/api/runs/${runId}/stream?token=${token}`)
 
-    // Event asinkron: dipanggil HANYA ketika koneksi sudah berhasil terjadi
-    s.on('connect', () => {
-      s.emit('subscribe', { channel: `workflow-run.${runId}` })
-      
-      // ✅ AMAN: State di-update secara asinkron, tidak akan memicu cascading render
-      setSocket(s)
-    })
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        setRunStatus(data.run_status)
+        setStepStatuses(data.step_statuses ?? {})
 
-    s.on('step.updated', (data: StepStatus) => {
-      setStepStatuses(prev => ({ ...prev, [data.stepId]: data.status }))
-    })
+        if (['success', 'failed', 'timeout'].includes(data.run_status)) {
+          eventSource.close()
+        }
+      } catch (e) {
+        console.error('SSE parse error:', e)
+      }
+    }
+
+    eventSource.onerror = () => {
+      eventSource.close()
+    }
 
     return () => {
-      s.disconnect()
-      setSocket(null)
+      eventSource.close()
     }
   }, [runId, token])
 
-  return { stepStatuses, socket }
+  return { stepStatuses, runStatus }
 }
