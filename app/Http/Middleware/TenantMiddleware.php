@@ -12,6 +12,11 @@ class TenantMiddleware
 {
     public function handle(Request $request, Closure $next): Response
     {
+        // Support token via query param khusus untuk SSE
+        if ($request->query('token') && !$request->bearerToken()) {
+            $request->headers->set('Authorization', 'Bearer ' . $request->query('token'));
+        }
+
         try {
             $user = JWTAuth::parseToken()->authenticate();
         } catch (JWTException $e) {
