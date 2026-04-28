@@ -10,8 +10,9 @@ export function HealthPanel() {
         isError,
     } = useQuery({
         queryKey: ["health"],
-        queryFn: workflowApi.getHealth,
-        refetchInterval: 30_000, // refresh tiap 30 detik
+        queryFn: () => workflowApi.getHealth(),
+        refetchInterval: 30_000, // cukup tiap 30 detik
+        staleTime: 25_000,
     });
 
     // (Opsional) Penanganan state loading dan error yang baik
@@ -21,6 +22,8 @@ export function HealthPanel() {
         );
     if (isError)
         return <div className="text-red-500 text-sm">Gagal memuat metrik.</div>;
+
+    const avgDuration = Math.max(0, health?.avg_duration_ms ?? 0);
 
     const stats = [
         {
@@ -43,9 +46,7 @@ export function HealthPanel() {
         },
         {
             label: "Avg Duration",
-            value: health?.avg_duration_ms
-                ? `${health.avg_duration_ms}ms`
-                : "—",
+            value: health?.avg_duration_ms ? `${avgDuration}ms` : "—",
             icon: Clock,
             color: "text-gray-600",
         },
