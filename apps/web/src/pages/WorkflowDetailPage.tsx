@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { workflowApi } from "../api/workflows";
 import { DagViewer } from "../components/DagViewer";
@@ -11,7 +11,8 @@ import { Play } from "lucide-react";
 export default function WorkflowDetailPage() {
     const { id } = useParams<{ id: string }>();
     const [activeRunId, setActiveRunId] = useState<string | null>(null);
-    const { stepStatuses } = useWorkflowSocket(activeRunId);
+    const { stepStatuses, runStatus } = useWorkflowSocket(activeRunId);
+    const FINISHED_STATUSES = ["success", "failed", "timeout"];
 
     // Perbaikan pada useQuery workflow
     const { data: workflow } = useQuery({
@@ -21,23 +22,31 @@ export default function WorkflowDetailPage() {
         enabled: !!id,
     });
 
-    // Perbaikan pada useQuery runs
     const { data: runs } = useQuery({
         queryKey: ["runs", id],
-        // Berikan fallback string kosong
         queryFn: () => workflowApi.getRuns(id ?? ""),
-        refetchInterval: activeRunId ? 3000 : false,
+
+        // Hanya poll kalau ada run yang masih aktif
         enabled: !!id,
+        refetchOnMount: true,
+        refetchInterval: (query) => {
+            const runs = query.state.data?.data ?? [];
+            const hasActiveRun = runs.some(
+                (r: any) => !FINISHED_STATUSES.includes(r.status),
+            );
+            return hasActiveRun ? 2000 : false; // stop polling kalau semua selesai
+        },
     });
+
+    const queryClient = useQueryClient(); // ← tambahkan ini di atas
 
     const handleTrigger = async () => {
         if (!id) return;
-
-        // Karena di atas sudah ada if (!id) return, TypeScript seharusnya
-        // sudah cerdas (Type Narrowing) dan tahu bahwa 'id' di baris ini PASTI string.
-        // Tapi jika masih rewel, kamu bisa tambahkan fallback juga:
-        const run = await workflowApi.trigger(id ?? "");
+        const run = await workflowApi.trigger(id);
         setActiveRunId(run.id);
+
+        // Langsung invalidate cache runs agar list refresh otomatis
+        await queryClient.invalidateQueries({ queryKey: ["runs", id] });
     };
 
     const dagDefinition = workflow?.active_version?.dag_definition;
@@ -45,6 +54,22 @@ export default function WorkflowDetailPage() {
     return (
         <div className="min-h-screen bg-gray-50">
             <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
+                {activeRunId && (
+                    <span
+                        className={`text-sm px-3 py-1 rounded-full font-medium ${
+                            runStatus === "running"
+                                ? "bg-blue-100 text-blue-700 animate-pulse"
+                                : runStatus === "success"
+                                  ? "bg-green-100 text-green-700"
+                                  : runStatus === "failed"
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-gray-100 text-gray-600"
+                        }`}
+                    >
+                        {runStatus}
+                    </span>
+                )}
+
                 <div>
                     <h1 className="text-lg font-bold text-gray-900">
                         {workflow?.name}
