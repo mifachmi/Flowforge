@@ -83,33 +83,56 @@ class WorkflowRunController extends Controller
 
     public function stream(Request $request, string $runId)
     {
+        $tenantId = $request->_tenant_id;
+
+        // Validasi dulu sebelum masuk streaming
         $run = WorkflowRun::where('id', $runId)
-            ->where('tenant_id', $request->_tenant_id)
+            ->where('tenant_id', $tenantId)
             ->firstOrFail();
 
         return response()->stream(function () use ($run) {
+            // Bersihkan semua output buffer yang ada
+            while (ob_get_level() > 0) {
+                ob_end_clean();
+            }
+
+            // Heartbeat awal — pastikan koneksi tidak langsung drop
+            echo " " . json_encode(['type' => 'connected']) . "\n\n";
+            flush();
+
+            $maxTime   = 120;
+            $startTime = time();
+            $lastSent  = null;
+
             while (true) {
+                if (time() - $startTime > $maxTime) break;
+                if (connection_aborted()) break;
+
                 $run->refresh();
                 $logs = $run->stepLogs()->orderBy('started_at')->get();
 
-                $payload = json_encode([
+                $payload = [
                     'run_status'    => $run->status,
-                    'step_statuses' => $logs->mapWithKeys(fn($log) => [
-                        $log->step_id => $log->status,
-                    ]),
-                ]);
+                    'step_statuses' => $logs->mapWithKeys(
+                        fn($log) => [$log->step_id => $log->status]
+                    )->toArray(),
+                ];
 
-                echo " {$payload}\n\n";
-                ob_flush();
-                flush();
+                // Kirim hanya kalau ada perubahan
+                $encoded = json_encode($payload);
+                if ($encoded !== $lastSent) {
+                    echo " {$encoded}\n\n"; // ← " " bukan " "
+                    flush();
+                    $lastSent = $encoded;
+                }
 
                 if ($run->isFinished()) break;
 
-                sleep(2);
+                sleep(1);
             }
         }, 200, [
             'Content-Type'      => 'text/event-stream',
-            'Cache-Control'     => 'no-cache',
+            'Cache-Control'     => 'no-cache, no-store',
             'X-Accel-Buffering' => 'no',
             'Connection'        => 'keep-alive',
         ]);

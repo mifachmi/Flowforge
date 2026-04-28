@@ -8,18 +8,31 @@ type StepStatus = 'pending' | 'running' | 'success' | 'failed' | 'retrying'
 export function useWorkflowSocket(runId: string | null) {
   const [stepStatuses, setStepStatuses] = useState<Record<string, StepStatus>>({})
   const [runStatus, setRunStatus] = useState<string>('pending')
-  const token = useAuthStore.getState().token
 
   useEffect(() => {
-    if (!runId || !token) return
+    if (!runId) return
+    
+    const token = useAuthStore.getState().token
+    const url = `http://localhost:8000/api/runs/${runId}/stream?token=${token}`
 
-    const eventSource = new EventSource(`/api/runs/${runId}/stream?token=${token}`)
+    console.log('[SSE] Connecting to:', url)  // ← tambah ini
+
+    const eventSource = new EventSource(url)
+    eventSource.onopen = () => console.log('[SSE] Connected!')  // ← tambah ini
 
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
-        setRunStatus(data.run_status)
-        setStepStatuses(data.step_statuses ?? {})
+        console.log('[SSE] Raw event:', event.data)  // ← tambah ini
+        // ─── Format yang dikirim backend saat ini ───────────────────────
+        // { run_status: "success", step_statuses: { step1: "success", ... } }
+        if (data.step_statuses) {
+          setStepStatuses(data.step_statuses)
+        }
+
+        if (data.run_status) {
+          setRunStatus(data.run_status)
+        }
 
         if (['success', 'failed', 'timeout'].includes(data.run_status)) {
           eventSource.close()
@@ -29,14 +42,15 @@ export function useWorkflowSocket(runId: string | null) {
       }
     }
 
-    eventSource.onerror = () => {
+    eventSource.onerror = (e) => {
+      console.error('[SSE] Error:', e)
       eventSource.close()
     }
 
     return () => {
       eventSource.close()
     }
-  }, [runId, token])
+  }, [runId])
 
   return { stepStatuses, runStatus }
 }

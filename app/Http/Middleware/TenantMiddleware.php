@@ -12,23 +12,28 @@ class TenantMiddleware
 {
     public function handle(Request $request, Closure $next): Response
     {
-        // Support token via query param khusus untuk SSE
-        if ($request->query('token') && !$request->bearerToken()) {
-            $request->headers->set('Authorization', 'Bearer ' . $request->query('token'));
+        // Coba ambil token dari Authorization header dulu
+        $token = $request->bearerToken();
+
+        // Kalau tidak ada (SSE/EventSource), ambil dari query param
+        if (!$token) {
+            $token = $request->query('token');
+        }
+
+        if (!$token) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
         try {
-            $user = JWTAuth::parseToken()->authenticate();
-        } catch (JWTException $e) {
-            return response()->json(['message' => 'Unauthorized.'], 401);
+            $payload  = JWTAuth::setToken($token)->getPayload();
+            $tenantId = $payload->get('tenant_id');
+            $userId   = $payload->get('sub');
+
+            $request->merge(['_tenant_id' => $tenantId, '_user_id' => $userId]);
+
+            return $next($request);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Invalid token.'], 401);
         }
-
-        if (!$user || !$user->tenant_id) {
-            return response()->json(['message' => 'Tenant not found.'], 403);
-        }
-
-        $request->merge(['_tenant_id' => $user->tenant_id]);
-
-        return $next($request);
     }
 }
