@@ -1,58 +1,277 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# FlowForge
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A real-time, multi-tenant workflow orchestration engine. Define, execute, and monitor
+automated workflows as DAGs — with live step-by-step visibility.
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Tech Stack
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+| Layer            | Technology                               |
+| ---------------- | ---------------------------------------- |
+| Backend          | Laravel 11, PHP 8.3                      |
+| Queue            | Redis + BullMQ (via Laravel Horizon)     |
+| Database         | PostgreSQL 16                            |
+| Frontend         | React 18, Vite, Tailwind CSS, React Flow |
+| Real-Time        | Server-Sent Events (SSE)                 |
+| Auth             | JWT (tymon/jwt-auth)                     |
+| Containerization | Docker, docker-compose                   |
+| CI/CD            | GitHub Actions                           |
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+---
 
-## Learning Laravel
+## Prerequisites
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+- Docker & docker-compose
+- PHP 8.3 + Composer (for local dev without Docker)
+- Node.js 20 + npm (for frontend dev)
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+---
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## Quick Start (Docker)
 
 ```bash
-composer require laravel/boost --dev
+# 1. Clone repo
+git clone https://github.com/your-org/flowforge.git
+cd flowforge
 
-php artisan boost:install
+# 2. Copy env files
+cp apps/api/.env.example apps/api/.env.docker
+cp apps/web/.env.example apps/web/.env
+
+# 3. Spin up seluruh stack
+docker-compose up --build -d
+
+# 4. Jalankan migrations + seeder
+docker-compose run --rm migrate
+
+# 5. Akses aplikasi
+# Frontend : http://localhost:3000
+# API      : http://localhost:8000/api
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Default credentials setelah seeder:
 
-## Contributing
+```
+Email    : admin@flowforge.dev
+Password : password
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+---
 
-## Code of Conduct
+## Local Development (tanpa Docker)
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### Backend
 
-## Security Vulnerabilities
+```bash
+cd apps/api
+composer install
+cp .env.example .env
+php artisan key:generate
+php artisan jwt:secret
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+# Sesuaikan DB_* dan REDIS_* di .env
+php artisan migrate --seed
+php artisan serve          # API di http://localhost:8000
+php artisan queue:work     # Worker terpisah
+```
 
-## License
+### Frontend
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+```bash
+cd apps/web
+npm install
+cp .env.example .env       # Set VITE_API_URL=http://localhost:8000
+npm run dev                # http://localhost:5173
+```
+
+---
+
+## Running Tests
+
+```bash
+cd apps/api
+
+# Semua tests
+php artisan test
+
+# Per suite
+php artisan test tests/Unit/DagParserTest.php
+php artisan test tests/Feature/WorkflowApiTest.php
+php artisan test tests/Feature/FullWorkflowRunTest.php
+
+# Dengan coverage
+php artisan test --coverage --min=60
+```
+
+---
+
+## Project Structure
+
+```
+flowforge/
+├── apps/
+│   ├── api/                    # Laravel backend
+│   │   ├── app/
+│   │   │   ├── Http/
+│   │   │   │   ├── Controllers/Api/
+│   │   │   │   └── Middleware/
+│   │   │   ├── Jobs/           # ExecuteWorkflowJob
+│   │   │   ├── Models/
+│   │   │   └── Services/       # DagParser
+│   │   ├── database/migrations/
+│   │   ├── tests/
+│   │   │   ├── Unit/           # DagParserTest
+│   │   │   └── Feature/        # WorkflowApiTest, FullWorkflowRunTest
+│   │   └── docker/
+│   └── web/                    # React frontend
+│       ├── src/
+│       │   ├── api/            # Axios client
+│       │   ├── components/     # DagViewer, HealthPanel, StepNode
+│       │   ├── hooks/          # useWorkflowSocket (SSE)
+│       │   ├── pages/          # DashboardPage, WorkflowDetailPage
+│       │   └── stores/         # Zustand auth store
+│       └── docker/
+├── .github/workflows/ci.yml
+├── docker-compose.yml
+├── README.md
+└── REVIEW.md
+```
+
+---
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────┐
+│                     Client Browser                  │
+│  React + Vite │ React Flow │ React Query │ Zustand  │
+└───────────────────────┬─────────────────────────────┘
+                        │ HTTP/SSE
+┌───────────────────────▼─────────────────────────────┐
+│              Laravel API (nginx + php-fpm)           │
+│  JWT Auth │ Tenant Middleware │ Rate Limiting        │
+│  REST API │ SSE Stream │ DAG Parser │ DagValidator   │
+└──────┬────────────────┬────────────────────────────┘
+       │                │
+┌──────▼──────┐  ┌──────▼──────┐
+│ PostgreSQL  │  │    Redis     │
+│  - tenants  │  │  - queues    │
+│  - users    │  │  - cache     │
+│  - workflows│  │  - rate limit│
+│  - runs     │  └─────────────┘
+│  - step_logs│         │
+└─────────────┘  ┌──────▼──────┐
+                 │Queue Worker  │
+                 │ExecuteWorkflow│
+                 │Job (2 procs) │
+                 └─────────────┘
+```
+
+### Request Flow
+
+1. **Trigger** — `POST /api/workflows/:id/trigger` → buat `WorkflowRun` → dispatch `ExecuteWorkflowJob` ke Redis queue
+2. **Execute** — Job melakukan topological sort DAG, eksekusi step per step (parallel jika tidak ada dependency), catat setiap status ke `step_logs`
+3. **Stream** — Frontend subscribe ke `GET /api/runs/:id/stream` (SSE), menerima event real-time setiap step berubah status
+4. **Visualize** — React Flow render DAG, node berubah warna sesuai status (pending → running → success/failed)
+
+---
+
+## Database Schema
+
+```
+tenants          users            workflow_versions
+─────────        ─────────        ─────────────────
+id (uuid) ──┐   id (uuid)        id (uuid)
+name        │   tenant_id ──┐    workflow_id ──┐
+slug        │   email       │    version         │
+            │   role        │    dag_definition  │
+            │   password    │    is_active       │
+            └───────────────┘                    │
+                                workflows        │
+                                ─────────        │
+                                id (uuid) ───────┘
+                                tenant_id
+                                name
+                                current_version
+
+workflow_runs     step_logs
+─────────────     ─────────
+id (uuid)         id (uuid)
+workflow_id       run_id ──────┐
+tenant_id                      │
+version           workflow_runs│
+status            id (uuid) ───┘
+started_at        step_id
+finished_at       status
+duration_ms       started_at
+                  finished_at
+                  duration_ms
+                  output (jsonb)
+                  error_message
+```
+
+### High-Volume Log Strategy
+
+`step_logs` disimpan di PostgreSQL dengan append-only pattern (tidak ada UPDATE, hanya INSERT). Justifikasi:
+
+- **PostgreSQL JSONB** cukup untuk MVP dengan volume ribuan run/hari
+- Index komposit `(run_id, step_id)` dan `(created_at DESC)` menjaga query tetap cepat
+- Untuk produksi skala besar, bisa migrasi ke **TimescaleDB** (hypertable) atau **ClickHouse** tanpa mengubah API
+
+---
+
+## API Endpoints
+
+| Method | Endpoint                               | Auth            | Description                |
+| ------ | -------------------------------------- | --------------- | -------------------------- |
+| POST   | `/api/auth/login`                      | —               | Login, dapat JWT           |
+| GET    | `/api/workflows`                       | ✓               | List workflows (paginated) |
+| POST   | `/api/workflows`                       | Admin           | Create workflow            |
+| GET    | `/api/workflows/:id`                   | ✓               | Get workflow detail        |
+| PUT    | `/api/workflows/:id`                   | Admin/Editor    | Update workflow            |
+| DELETE | `/api/workflows/:id`                   | Admin           | Delete workflow            |
+| POST   | `/api/workflows/:id/trigger`           | Admin/Editor    | Trigger manual run         |
+| POST   | `/api/workflows/:id/rollback/:version` | Admin           | Rollback ke versi lama     |
+| GET    | `/api/workflows/:id/runs`              | ✓               | Run history                |
+| GET    | `/api/runs/:id/stream`                 | ✓ (query param) | SSE real-time stream       |
+| GET    | `/api/health`                          | ✓               | System health metrics      |
+
+---
+
+## Trade-offs & What I'd Improve
+
+### Trade-offs yang Dibuat
+
+**1. SSE vs WebSocket**
+SSE dipilih karena lebih simpel untuk unidirectional streaming (server → client) tanpa
+memerlukan infrastruktur tambahan seperti Laravel Reverb atau Pusher. Trade-off: tidak bisa
+kirim event dari client ke server melalui SSE. Untuk produksi, WebSocket dengan Reverb
+lebih scalable.
+
+**2. PostgreSQL untuk Step Logs**
+Step logs disimpan di PostgreSQL dengan append-only strategy alih-alih dedicated log store
+seperti Elasticsearch. Lebih mudah disetup dan cukup untuk MVP. Trade-off: pada volume
+sangat tinggi (jutaan log/hari), perlu partitioning atau migrasi ke TimescaleDB.
+
+**3. Supervisor untuk Queue Worker**
+Queue worker dijalankan via Supervisor di container yang sama dengan API. Lebih mudah
+untuk local dev dan deployment sederhana. Trade-off: tidak bisa scale worker secara
+independen. Untuk produksi, worker sebaiknya container terpisah dengan auto-scaling.
+
+**4. Single-Region Architecture**
+Arsitektur dirancang untuk single-region deployment. Trade-off: tidak ada multi-region
+failover. Untuk produksi global, perlu read replicas PostgreSQL di region lain.
+
+### Yang Akan Diperbaiki dengan Lebih Banyak Waktu
+
+- [ ] **GraphQL endpoint** di samping REST (bonus requirement B)
+- [ ] **AI Feature** — Natural language workflow builder dengan OpenAI GPT-4o
+- [ ] **Webhook trigger** — verifikasi HMAC signature untuk keamanan
+- [ ] **Cron scheduler** — gunakan distributed lock (Redis) untuk mencegah double-trigger
+- [ ] **Audit log** — catat semua perubahan workflow per user
+- [ ] **Frontend tests** — Vitest + React Testing Library
+- [ ] **E2E tests** — Playwright untuk full browser automation
+- [ ] **Metrics** — Prometheus + Grafana untuk observability produksi
+- [ ] **Rate limiting** berbasis Redis sliding window yang lebih granular per tenant
+- [ ] **Step output chaining** — output step sebelumnya bisa jadi input step berikutnya

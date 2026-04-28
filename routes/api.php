@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AiWorkflowController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\WorkflowController;
 use App\Http\Controllers\Api\WorkflowRunController;
@@ -37,4 +38,9 @@ Route::middleware(['auth:api', 'tenant', 'throttle:60,1'])->group(function () {
     // SSE
     Route::get('runs/{runId}/stream', [WorkflowRunController::class, 'stream'])
         ->middleware(['auth:api', 'tenant']);
+
+    // AI Routes
+    Route::post('ai/generate-workflow', [AiWorkflowController::class, 'generate'])
+        ->middleware(['auth:api', 'tenant', 'throttle:10,1']); // max 10 req/menit
+
 });

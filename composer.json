@@ -11,6 +11,7 @@
         "laravel/horizon": "^5.46",
         "laravel/reverb": "^1.0",
         "laravel/tinker": "^3.0",
+        "openai-php/laravel": "^0.19.1",
         "rebing/graphql-laravel": "^9.17",
         "spatie/laravel-permission": "^7.3",
         "tymon/jwt-auth": "^2.3"
